@@ -1,6 +1,5 @@
 package play.modules.guice.methodcache;
 
-
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
@@ -24,99 +23,68 @@ import play.cache.Cache;
  * 
  */
 public class CacheForMethodInterceptor implements MethodInterceptor {
+
 	public Object invoke(MethodInvocation invocation) throws Throwable {
 		Object result = null;
 		Method method = invocation.getMethod();
 		String methodName = getMethodName(invocation.getThis(), method);
 		CacheForMethod cacheFor = method.getAnnotation(CacheForMethod.class);
-		String key = dealWithCacheKey(cacheFor.key(), invocation.getArguments());
-		if (StringUtils.isNotBlank(cacheFor.key())) {
+		String key = CacheKeyUtil.dealWithCacheKey(cacheFor.key(), invocation.getArguments());
+		if (key != null) {
 			result = Cache.get(key);
 			if (result != null) {
-				Logger.debug("命中缓存了 key: " + key + " 方法:" + methodName);
-				System.out.println("命中缓存了 key: " + key + " 方法:" + methodName);
+				Logger.debug("Hit cache for key: " + key + " method:"+ methodName);
+				System.out.println("Hit cache for key: " + key + " method:"+ methodName);
+				if (result == Null.nullObj) {
+					return null;
+				}
 				return result;
 			}
+		} else {
+			Logger.debug("The cache key is empty, will not be cached!");
+			System.out.println("The cache key is empty, will not be cached!");
 		}
 		result = invocation.proceed();
-		if (result != null) {
-			Cache.set(key, result, getCacheTime(cacheFor.time()));
-			Logger.debug("设置缓存了 key: " + key + " 方法:" + methodName);
-			System.out.println("设置缓存了 key: " + key + " 方法:" + methodName);
+		if (method.getReturnType() != void.class && key != null) {
+			result = (result == null && cacheFor.cacheNullAble()) ? Null.nullObj : result;
+			if (result != null) {
+				String cacheTime = getCacheTime(cacheFor.time());
+				Cache.set(key, result, cacheTime);
+				if(cacheFor.isRemember()){
+					CacheKeyManage.addCacheKey(key, cacheTime);
+				}
+				Logger.debug("set cache for key: " + key + " method:"+ methodName);
+				System.out.println("set cache for key: " + key + " method:"+ methodName);
+			} else {
+				System.out.println(methodName+ ":the return value is null, not cache!");
+				Logger.debug(methodName+ ":the return value is null, not cache!");
+			}
 		} else {
-			System.out.println(methodName + " 没有返回值，无法设置缓存!");
-			Logger.debug(methodName + " 没有返回值，无法设置缓存!");
+			System.out.println(methodName+ ":No return value, unable to set the cache!");
+			Logger.debug(methodName+ ":No return value, unable to set the cache!");
 		}
 		return result;
 	}
-	
-	public static String getMethodName(Object obj ,Method method){
-		String clazzName = obj!= null ? obj.getClass().getName() : "";
-		clazzName = clazzName.substring(0, clazzName.indexOf("$"));
+
+	public static String getMethodName(Object obj, Method method) {
+		String clazzName = obj != null ? obj.getClass().getName() : "";
+		int index = clazzName.indexOf("$");
+		if (index < 0) {
+			index = clazzName.length();
+		}
+		clazzName = clazzName.substring(0, index);
 		String methodName = method != null ? method.getName() : "";
-		return clazzName+"."+methodName;
+		return clazzName + "." + methodName;
 	}
 
 	public static String getCacheTime(String time) {
+		if(time == null || "".equals(time)){
+			throw new IllegalArgumentException("Invalid cacheTime pattern : " + String.valueOf(time));
+		}
 		String result = time;
 		if (StringUtils.startsWith(time, "cron.")) {
 			result = Play.configuration.getProperty(time);
-			;
 		}
 		return result;
-	}
-
-	public static String dealWithCacheKey(String key, Object[] args)
-			throws IllegalArgumentException, IllegalAccessException {
-		String result = key;
-		if (args != null && args.length > 0) {
-			for (int i = 0; i < args.length; i++) {
-				Object arg = args[i];
-				if (arg == null) {
-					arg = "null";
-				}
-				Class clazz = arg.getClass();
-				result = result.replaceAll("\\{" + (i + 1) + "\\}",
-						arg.toString());
-				if (!isDirect(clazz)) {
-					result = dealObjWithCacheKey(String.valueOf(i + 1), arg,
-							result);
-				}
-			}
-		}
-		return result;
-	}
-
-	private static String dealObjWithCacheKey(String prefix, Object arg,
-			String key) throws IllegalArgumentException, IllegalAccessException {
-		String result = key;
-		if (key.indexOf(prefix) >= 0) {
-			Class clazz = arg.getClass();
-			Field[] fields = clazz.getDeclaredFields();
-			for (Field field : fields) {
-				field.setAccessible(true);
-				Object value = field.get(arg);
-				if (value == null) {
-					value = "null";
-				}
-				result = result.replaceAll(
-						"\\{" + prefix + "." + field.getName() + "\\}",
-						String.valueOf(value));
-				if (!isDirect(value.getClass())) {
-					result = dealObjWithCacheKey(
-							prefix + "." + field.getName(), value, result);
-				}
-			}
-		}
-		return result;
-	}
-
-	public static boolean isDirect(Class<?> clazz) {
-		return clazz.equals(String.class) || clazz.equals(Integer.class)
-				|| Enum.class.isAssignableFrom(clazz)
-				|| clazz.equals(Boolean.class) || clazz.equals(Long.class)
-				|| clazz.equals(Double.class) || clazz.equals(Float.class)
-				|| clazz.equals(Short.class) || clazz.equals(BigDecimal.class)
-				|| clazz.isPrimitive() || clazz.equals(Class.class);
 	}
 }
