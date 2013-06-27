@@ -30,7 +30,7 @@ public class CacheKeyManage {
 		if (cacheKey != null && "".endsWith(cacheKey) && cacheTime != null
 				&& !"".equals(cacheTime)) {
 			cacheMaps.put(cacheKey,
-					new CacheKey(cacheKey, Time.parseDuration(cacheTime)));
+					new CacheKey(cacheKey, Time.parseDuration(cacheTime)*1000));
 		}
 	}
 
@@ -43,6 +43,7 @@ public class CacheKeyManage {
 		List<String> result = new ArrayList<String>();
 		if (prefix == null) {
 			for (CacheKey key : cacheMaps.values()) {
+				//去除过期的缓存
 				if (System.currentTimeMillis() - key.getAddTime().getTime() >= key
 						.getCacheTime()) {
 					cacheMaps.remove(key.getKey());
@@ -75,7 +76,7 @@ public class CacheKeyManage {
 		 */
 		private Date addTime;
 		/**
-		 * 缓存的key
+		 * 缓存的时间
 		 */
 		private int cacheTime;
 

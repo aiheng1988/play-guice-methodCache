@@ -1,20 +1,16 @@
 package play.modules.guice.methodcache;
 
-import java.lang.reflect.Field;
 import java.lang.reflect.Method;
-import java.math.BigDecimal;
-import java.util.Calendar;
-import java.util.GregorianCalendar;
+import java.util.Arrays;
+import java.util.List;
 
 import org.aopalliance.intercept.MethodInterceptor;
 import org.aopalliance.intercept.MethodInvocation;
-import org.apache.commons.lang.StringUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 
 import play.Logger;
 import play.Play;
 import play.cache.Cache;
+import play.classloading.enhancers.LocalvariablesNamesEnhancer;
 
 /**
  * 基于guice和play-guice实现的一个在方法上使用注解来实现缓存的功能
@@ -29,44 +25,59 @@ public class CacheForMethodInterceptor implements MethodInterceptor {
 		Method method = invocation.getMethod();
 		String methodName = getMethodName(invocation.getThis(), method);
 		CacheForMethod cacheFor = method.getAnnotation(CacheForMethod.class);
-		String key = CacheKeyUtil.dealWithCacheKey(cacheFor.key(), invocation.getArguments());
+		String key = CacheKeyUtil.dealWithCacheKeyByIndex(cacheFor.key(), invocation.getArguments() , getParameterNames(cacheFor, method));
 		if (key != null) {
 			result = Cache.get(key);
 			if (result != null) {
-				Logger.debug("Hit cache for key: " + key + " method:"+ methodName);
-				System.out.println("Hit cache for key: " + key + " method:"+ methodName);
+				Logger.info("Hit cache for key: " + key + " method:"+ methodName);
 				if (result == Null.nullObj) {
 					return null;
 				}
 				return result;
 			}
 		} else {
-			Logger.debug("The cache key is empty, will not be cached!");
-			System.out.println("The cache key is empty, will not be cached!");
+			Logger.info("The cache key is empty, will not be cached!");
 		}
 		result = invocation.proceed();
 		if (method.getReturnType() != void.class && key != null) {
-			result = (result == null && cacheFor.cacheNullAble()) ? Null.nullObj : result;
-			if (result != null) {
+			Object cacheResult = (result == null && cacheFor.cacheNullAble()) ? Null.nullObj : result;
+			if (cacheResult != null) {
 				String cacheTime = getCacheTime(cacheFor.time());
-				Cache.set(key, result, cacheTime);
-				if(cacheFor.isRemember()){
+				Cache.set(key, cacheResult, cacheTime);
+				if(cacheFor.rememberCacheKey()){
 					CacheKeyManage.addCacheKey(key, cacheTime);
 				}
-				Logger.debug("set cache for key: " + key + " method:"+ methodName);
-				System.out.println("set cache for key: " + key + " method:"+ methodName);
+				Logger.info("set cache for key: " + key + " method:"+ methodName);
 			} else {
-				System.out.println(methodName+ ":the return value is null, not cache!");
-				Logger.debug(methodName+ ":the return value is null, not cache!");
+				Logger.info(methodName+ ":the return value is null, not cache!");
 			}
 		} else {
-			System.out.println(methodName+ ":No return value, unable to set the cache!");
-			Logger.debug(methodName+ ":No return value, unable to set the cache!");
+			Logger.info(methodName+ ":No return value, unable to set the cache!");
 		}
 		return result;
 	}
 
-	public static String getMethodName(Object obj, Method method) {
+	/**
+	 * 获取参数名
+	 * @param cacheFor
+	 * @param method
+	 * @return
+	 */
+	private static String[] getParameterNames(CacheForMethod cacheFor  , Method method){
+		if(cacheFor.byName()){
+			List<String> parameterNames = LocalvariablesNamesEnhancer.lookupParameterNames(method);
+			return (String[]) parameterNames.toArray();
+		}else{
+			int size = method.getParameterTypes().length;
+			String[] result = new String[size];
+			for(int i = 0 ; i < size ; i++){
+				result[i] = String.valueOf(i);
+			}
+			return result;
+		}
+	}
+	
+	private static String getMethodName(Object obj, Method method) {
 		String clazzName = obj != null ? obj.getClass().getName() : "";
 		int index = clazzName.indexOf("$");
 		if (index < 0) {
@@ -77,12 +88,12 @@ public class CacheForMethodInterceptor implements MethodInterceptor {
 		return clazzName + "." + methodName;
 	}
 
-	public static String getCacheTime(String time) {
+	private static String getCacheTime(String time) {
 		if(time == null || "".equals(time)){
 			throw new IllegalArgumentException("Invalid cacheTime pattern : " + String.valueOf(time));
 		}
 		String result = time;
-		if (StringUtils.startsWith(time, "cron.")) {
+		if (time.startsWith("cron.")) {
 			result = Play.configuration.getProperty(time);
 		}
 		return result;

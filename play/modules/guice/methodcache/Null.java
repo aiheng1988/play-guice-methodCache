@@ -1,10 +1,5 @@
 package play.modules.guice.methodcache;
 
-/**
- * 判断是否为空
- * @author rongliang.xiong
- *
- */
 class Null {
 	private Null(){
 		
